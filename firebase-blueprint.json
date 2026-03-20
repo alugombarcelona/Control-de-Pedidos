@@ -10,6 +10,7 @@
         "client": { "type": "string", "description": "The client name" },
         "creationDate": { "type": "string", "description": "The date the order was created (YYYY-MM-DD)" },
         "entryDate": { "type": "string", "description": "The date the order entered the warehouse (YYYY-MM-DD)" },
+        "notes": { "type": "string", "description": "Additional notes or incidents" },
         "status": { "type": "string", "enum": ["pending", "entered"], "description": "The status of the order" },
         "userId": { "type": "string", "description": "The ID of the user who owns this order" },
         "createdAt": { "type": "number", "description": "Timestamp of creation" }
