@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "An order tracked for entry time.",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string", "description": "The unique order number" },
+        "color": { "type": "string", "description": "The color of the order" },
+        "client": { "type": "string", "description": "The client name" },
+        "creationDate": { "type": "string", "description": "The date the order was created (YYYY-MM-DD)" },
+        "entryDate": { "type": "string", "description": "The date the order entered the warehouse (YYYY-MM-DD)" },
+        "status": { "type": "string", "enum": ["pending", "entered"], "description": "The status of the order" },
+        "userId": { "type": "string", "description": "The ID of the user who owns this order" },
+        "createdAt": { "type": "number", "description": "Timestamp of creation" }
+      },
+      "required": ["orderNumber", "color", "client", "creationDate", "status", "userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Collection of orders"
+    }
+  }
+}

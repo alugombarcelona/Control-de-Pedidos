@@ -1,0 +1,5 @@
+{
+  "name": "Control de Pedidos",
+  "description": "Aplicación para llevar el control de tiempo de entrada de pedidos al almacén, con estadísticas por color.",
+  "requestFramePermissions": []
+}

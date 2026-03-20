@@ -1,0 +1,100 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: orders
+    // Document ID: auto-generated
+    // Fields:
+    //   - orderNumber: string (required, 1-50 chars)
+    //   - color: string (required, 1-50 chars)
+    //   - client: string (required, 1-100 chars)
+    //   - creationDate: string (required, YYYY-MM-DD format)
+    //   - entryDate: string (optional, YYYY-MM-DD format)
+    //   - status: string (required, 'pending' or 'entered')
+    //   - userId: string (required, must match auth.uid)
+    //   - createdAt: number (required, timestamp)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidOrder() {
+      let allowedFields = ['orderNumber', 'color', 'client', 'creationDate', 'entryDate', 'status', 'userId', 'createdAt'];
+      let hasRequired = hasRequiredFields(['orderNumber', 'color', 'client', 'creationDate', 'status', 'userId', 'createdAt']);
+      let onlyAllowed = hasOnlyAllowedFields(allowedFields);
+      
+      let validOrderNumber = validStringLength('orderNumber', 1, 50);
+      let validColor = validStringLength('color', 1, 50);
+      let validClient = validStringLength('client', 1, 100);
+      let validCreationDate = isValidDateString(request.resource.data.creationDate);
+      let validEntryDate = !('entryDate' in request.resource.data) || isValidDateString(request.resource.data.entryDate);
+      let validStatus = request.resource.data.status in ['pending', 'entered'];
+      let validCreatedAt = request.resource.data.createdAt is number;
+
+      return hasRequired && onlyAllowed && validOrderNumber && validColor && validClient && validCreationDate && validEntryDate && validStatus && validCreatedAt;
+    }
+
+    function validStatusTransition() {
+      let previousStatus = resource.data.status;
+      let newStatus = request.resource.data.status;
+      return (previousStatus == 'pending' && newStatus == 'entered') || (previousStatus == newStatus);
+    }
+
+    match /orders/{orderId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidOrder() && isOwner(request.resource.data.userId);
+      allow update: if isDocOwner() && isValidOrder() && uidNotModified() && areImmutableFieldsUnchanged(['createdAt', 'orderNumber', 'client', 'creationDate']) && validStatusTransition();
+      allow delete: if isDocOwner();
+    }
+  }
+}
