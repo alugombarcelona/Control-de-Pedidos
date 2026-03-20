@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { format, differenceInDays } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LogOut, Plus, CheckCircle, Clock, Package, BarChart3, User as UserIcon, Activity, ChevronRight, FileDown } from 'lucide-react';
+import { LogOut, Plus, CheckCircle, Clock, Package, BarChart3, User as UserIcon, Activity, ChevronRight, FileDown, Search, Filter, Edit2, Trash2, Inbox, PackageOpen, ChevronLeft, X } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -360,16 +360,60 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
 }
 
 function OrderList({ orders }: { orders: Order[] }) {
-  const pendingOrders = orders.filter(o => o.status === 'pending');
-  const enteredOrders = orders.filter(o => o.status === 'entered');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterColor, setFilterColor] = useState('');
+  
+  const [currentPagePending, setCurrentPagePending] = useState(1);
+  const [currentPageEntered, setCurrentPageEntered] = useState(1);
+  const itemsPerPage = 10;
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [confirmDate, setConfirmDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [confirmNotes, setConfirmNotes] = useState('');
 
-  const openConfirmModal = (orderId: string) => {
-    setSelectedOrderId(orderId);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+
+  // Derived unique colors for filter
+  const uniqueColors = useMemo(() => {
+    const colors = new Set(orders.map(o => o.color.toLowerCase().trim()));
+    return Array.from(colors).sort();
+  }, [orders]);
+
+  // Filtered orders
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      const matchesSearch = o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            o.client.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesColor = filterColor ? o.color.toLowerCase().trim() === filterColor : true;
+      return matchesSearch && matchesColor;
+    });
+  }, [orders, searchTerm, filterColor]);
+
+  const pendingOrders = filteredOrders.filter(o => o.status === 'pending');
+  const enteredOrders = filteredOrders.filter(o => o.status === 'entered');
+
+  // Pagination logic
+  const paginatedPending = pendingOrders.slice((currentPagePending - 1) * itemsPerPage, currentPagePending * itemsPerPage);
+  const totalPagesPending = Math.ceil(pendingOrders.length / itemsPerPage);
+
+  const paginatedEntered = enteredOrders.slice((currentPageEntered - 1) * itemsPerPage, currentPageEntered * itemsPerPage);
+  const totalPagesEntered = Math.ceil(enteredOrders.length / itemsPerPage);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPagePending(1);
+    setCurrentPageEntered(1);
+  }, [searchTerm, filterColor]);
+
+  const openConfirmModal = (order: Order) => {
+    setSelectedOrderId(order.id);
     setConfirmDate(format(new Date(), 'yyyy-MM-dd'));
+    setConfirmNotes(order.notes || '');
     setConfirmModalOpen(true);
   };
 
@@ -379,17 +423,133 @@ function OrderList({ orders }: { orders: Order[] }) {
       const orderRef = doc(db, 'orders', selectedOrderId);
       await updateDoc(orderRef, {
         status: 'entered',
-        entryDate: confirmDate
+        entryDate: confirmDate,
+        notes: confirmNotes.trim()
       });
       setConfirmModalOpen(false);
       setSelectedOrderId(null);
+      toast.success('Entrada confirmada');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `orders/${selectedOrderId}`);
+      toast.error('Error al confirmar entrada');
     }
+  };
+
+  const openEditModal = (order: Order) => {
+    setEditingOrder({ ...order });
+    setEditModalOpen(true);
+  };
+
+  const executeEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+    
+    // Check for duplicates if orderNumber changed
+    const originalOrder = orders.find(o => o.id === editingOrder.id);
+    if (originalOrder && originalOrder.orderNumber.toLowerCase() !== editingOrder.orderNumber.toLowerCase()) {
+      const isDuplicate = orders.some(
+        (o) => o.id !== editingOrder.id && o.orderNumber.toLowerCase() === editingOrder.orderNumber.toLowerCase().trim()
+      );
+      if (isDuplicate) {
+        toast.error(`El pedido ${editingOrder.orderNumber} ya existe.`);
+        return;
+      }
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', editingOrder.id);
+      await updateDoc(orderRef, {
+        orderNumber: editingOrder.orderNumber.trim(),
+        client: editingOrder.client.trim(),
+        color: editingOrder.color.trim(),
+        creationDate: editingOrder.creationDate,
+        notes: editingOrder.notes?.trim() || '',
+        ...(editingOrder.status === 'entered' ? { entryDate: editingOrder.entryDate } : {})
+      });
+      setEditModalOpen(false);
+      setEditingOrder(null);
+      toast.success('Pedido actualizado');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `orders/${editingOrder.id}`);
+      toast.error('Error al actualizar pedido');
+    }
+  };
+
+  const openDeleteModal = (orderId: string) => {
+    setDeletingOrderId(orderId);
+    setDeleteModalOpen(true);
+  };
+
+  const executeDelete = async () => {
+    if (!deletingOrderId) return;
+    try {
+      await deleteDoc(doc(db, 'orders', deletingOrderId));
+      setDeleteModalOpen(false);
+      setDeletingOrderId(null);
+      toast.success('Pedido eliminado');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `orders/${deletingOrderId}`);
+      toast.error('Error al eliminar pedido');
+    }
+  };
+
+  const renderPagination = (currentPage: number, totalPages: number, setPage: (p: number) => void) => {
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex items-center justify-between px-5 py-3 border-t border-white/10 bg-black/20">
+        <span className="text-xs text-gray-500 font-mono">
+          Página {currentPage} de {totalPages}
+        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setPage(Math.max(1, currentPage - 1))}
+            disabled={currentPage === 1}
+            className="p-1.5 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+            disabled={currentPage === totalPages}
+            className="p-1.5 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="space-y-8">
+      {/* Search and Filters */}
+      <div className="glass-panel rounded-2xl p-4 flex flex-col sm:flex-row gap-4 items-center">
+        <div className="relative flex-1 w-full">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Buscar por ID o Cliente..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white placeholder-gray-600 text-sm"
+          />
+        </div>
+        <div className="relative w-full sm:w-64">
+          <Filter size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <select
+            value={filterColor}
+            onChange={(e) => setFilterColor(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm appearance-none"
+          >
+            <option value="">Todos los colores</option>
+            {uniqueColors.map(c => (
+              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Pending Orders */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold uppercase tracking-widest text-gray-300 flex items-center gap-2">
@@ -402,8 +562,9 @@ function OrderList({ orders }: { orders: Order[] }) {
         </div>
         
         {pendingOrders.length === 0 ? (
-          <div className="glass-panel border-dashed border-white/20 p-8 text-center text-gray-500 rounded-2xl font-mono text-sm">
-            NO HAY PEDIDOS PENDIENTES
+          <div className="glass-panel border-dashed border-white/20 p-12 flex flex-col items-center justify-center text-gray-500 rounded-2xl">
+            <Inbox size={48} className="mb-4 text-white/10" />
+            <p className="font-mono text-sm tracking-widest">NO HAY PEDIDOS PENDIENTES</p>
           </div>
         ) : (
           <div className="glass-panel rounded-2xl overflow-hidden">
@@ -416,13 +577,13 @@ function OrderList({ orders }: { orders: Order[] }) {
                     <th className="px-5 py-4">Color</th>
                     <th className="px-5 py-4">Creación</th>
                     <th className="px-5 py-4">Notas</th>
-                    <th className="px-5 py-4 text-right">Acción</th>
+                    <th className="px-5 py-4 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {pendingOrders.map(order => (
+                  {paginatedPending.map(order => (
                     <tr key={order.id} className="hover:bg-white/5 transition-colors group">
-                      <td className="px-5 py-4 font-mono text-white">{order.orderNumber}</td>
+                      <td className="px-5 py-4 font-display font-bold text-white tracking-wide">{order.orderNumber}</td>
                       <td className="px-5 py-4 text-gray-300">{order.client}</td>
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-gray-300">
@@ -432,23 +593,41 @@ function OrderList({ orders }: { orders: Order[] }) {
                       <td className="px-5 py-4 font-mono text-gray-400 text-xs">{order.creationDate}</td>
                       <td className="px-5 py-4 text-gray-400 text-xs max-w-[150px] truncate" title={order.notes}>{order.notes || '-'}</td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => openConfirmModal(order.id)}
-                          className="inline-flex items-center gap-1.5 bg-neon-accent/10 text-neon-accent border border-neon-accent/30 hover:bg-neon-accent hover:text-black px-3 py-1.5 rounded-lg text-xs font-bold tracking-wider transition-all"
-                        >
-                          <CheckCircle size={14} />
-                          CONFIRMAR
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(order)}
+                            className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => openDeleteModal(order.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                            title="Eliminar"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => openConfirmModal(order)}
+                            className="inline-flex items-center gap-1.5 bg-neon-accent/10 text-neon-accent border border-neon-accent/30 hover:bg-neon-accent hover:text-black px-3 py-1.5 rounded-lg text-xs font-bold tracking-wider transition-all ml-2"
+                          >
+                            <CheckCircle size={14} />
+                            CONFIRMAR
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {renderPagination(currentPagePending, totalPagesPending, setCurrentPagePending)}
           </div>
         )}
       </div>
 
+      {/* Entered Orders */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold uppercase tracking-widest text-gray-300 flex items-center gap-2">
@@ -461,8 +640,9 @@ function OrderList({ orders }: { orders: Order[] }) {
         </div>
         
         {enteredOrders.length === 0 ? (
-          <div className="glass-panel border-dashed border-white/20 p-8 text-center text-gray-500 rounded-2xl font-mono text-sm">
-            NO HAY REGISTROS
+          <div className="glass-panel border-dashed border-white/20 p-12 flex flex-col items-center justify-center text-gray-500 rounded-2xl">
+            <PackageOpen size={48} className="mb-4 text-white/10" />
+            <p className="font-mono text-sm tracking-widest">NO HAY REGISTROS EN ALMACÉN</p>
           </div>
         ) : (
           <div className="glass-panel rounded-2xl overflow-hidden">
@@ -476,14 +656,18 @@ function OrderList({ orders }: { orders: Order[] }) {
                     <th className="px-5 py-4">Entrada</th>
                     <th className="px-5 py-4">Notas</th>
                     <th className="px-5 py-4 text-right">Tiempo</th>
+                    <th className="px-5 py-4 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {enteredOrders.map(order => {
+                  {paginatedEntered.map(order => {
                     const days = differenceInDays(new Date(order.entryDate!), new Date(order.creationDate));
+                    const isDelayed = days > 5;
+                    const isWarning = days >= 3 && days <= 5;
+                    
                     return (
                       <tr key={order.id} className="hover:bg-white/5 transition-colors">
-                        <td className="px-5 py-4 font-mono text-white">{order.orderNumber}</td>
+                        <td className="px-5 py-4 font-display font-bold text-white tracking-wide">{order.orderNumber}</td>
                         <td className="px-5 py-4 text-gray-300">{order.client}</td>
                         <td className="px-5 py-4">
                           <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-gray-300">
@@ -493,9 +677,31 @@ function OrderList({ orders }: { orders: Order[] }) {
                         <td className="px-5 py-4 font-mono text-gray-400 text-xs">{order.entryDate}</td>
                         <td className="px-5 py-4 text-gray-400 text-xs max-w-[150px] truncate" title={order.notes}>{order.notes || '-'}</td>
                         <td className="px-5 py-4 text-right">
-                          <span className="inline-flex items-center px-2 py-1 bg-black/50 border border-white/10 rounded font-mono text-neon-accent text-xs">
+                          <span className={`inline-flex items-center px-2 py-1 border rounded font-mono text-xs ${
+                            isDelayed ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                            isWarning ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                            'bg-neon-accent/10 border-neon-accent/30 text-neon-accent'
+                          }`}>
                             {days}D
                           </span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => openEditModal(order)}
+                              className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => openDeleteModal(order.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                              title="Eliminar"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -503,21 +709,34 @@ function OrderList({ orders }: { orders: Order[] }) {
                 </tbody>
               </table>
             </div>
+            {renderPagination(currentPageEntered, totalPagesEntered, setCurrentPageEntered)}
           </div>
         )}
       </div>
 
+      {/* Confirm Entry Modal */}
       {confirmModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="glass-panel rounded-2xl p-6 max-w-sm w-full border border-neon-accent/30 shadow-[0_0_30px_rgba(0,255,204,0.15)]">
             <h3 className="text-lg font-bold text-white mb-4">Confirmar Entrada</h3>
-            <p className="text-sm text-gray-400 mb-4">Selecciona la fecha de entrada al almacén.</p>
+            <p className="text-sm text-gray-400 mb-4">Selecciona la fecha de entrada al almacén y actualiza las notas si es necesario.</p>
+            
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Fecha de Entrada</label>
             <input
               type="date"
               value={confirmDate}
               onChange={(e) => setConfirmDate(e.target.value)}
-              className="w-full px-4 py-2.5 bg-black/60 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm font-mono mb-6 [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
+              className="w-full px-4 py-2.5 bg-black/60 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm font-mono mb-4 [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
             />
+            
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Notas / Incidencias</label>
+            <textarea
+              value={confirmNotes}
+              onChange={(e) => setConfirmNotes(e.target.value)}
+              className="w-full px-4 py-2.5 bg-black/60 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm resize-none h-24 mb-6"
+              placeholder="Información adicional..."
+            />
+
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmModalOpen(false)}
@@ -530,6 +749,129 @@ function OrderList({ orders }: { orders: Order[] }) {
                 className="flex-1 py-2.5 px-4 rounded-xl bg-neon-accent text-black hover:bg-neon-accent-hover transition-colors text-sm font-bold shadow-[0_0_15px_rgba(0,255,204,0.3)]"
               >
                 GUARDAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editModalOpen && editingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="glass-panel rounded-2xl p-6 max-w-md w-full border border-white/20 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-bold text-white">Editar Pedido</h3>
+              <button onClick={() => setEditModalOpen(false)} className="text-gray-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={executeEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">ID Pedido</label>
+                <input
+                  type="text"
+                  required
+                  value={editingOrder.orderNumber}
+                  onChange={(e) => setEditingOrder({...editingOrder, orderNumber: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white font-mono text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Color</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingOrder.color}
+                    onChange={(e) => setEditingOrder({...editingOrder, color: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Fecha Creación</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingOrder.creationDate}
+                    onChange={(e) => setEditingOrder({...editingOrder, creationDate: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm font-mono [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Cliente</label>
+                <input
+                  type="text"
+                  required
+                  value={editingOrder.client}
+                  onChange={(e) => setEditingOrder({...editingOrder, client: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm"
+                />
+              </div>
+              {editingOrder.status === 'entered' && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Fecha Entrada</label>
+                  <input
+                    type="date"
+                    required
+                    value={editingOrder.entryDate || ''}
+                    onChange={(e) => setEditingOrder({...editingOrder, entryDate: e.target.value})}
+                    className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm font-mono [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Notas</label>
+                <textarea
+                  value={editingOrder.notes || ''}
+                  onChange={(e) => setEditingOrder({...editingOrder, notes: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm resize-none h-20"
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition-colors text-sm font-bold"
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-white text-black hover:bg-gray-200 transition-colors text-sm font-bold"
+                >
+                  GUARDAR CAMBIOS
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="glass-panel rounded-2xl p-6 max-w-sm w-full border border-red-500/30 shadow-[0_0_30px_rgba(239,68,68,0.15)]">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mb-4 border border-red-500/20">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">Eliminar Pedido</h3>
+            <p className="text-sm text-gray-400 mb-6">¿Estás seguro de que deseas eliminar este pedido? Esta acción no se puede deshacer.</p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteModalOpen(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition-colors text-sm font-bold"
+              >
+                CANCELAR
+              </button>
+              <button
+                onClick={executeDelete}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors text-sm font-bold shadow-[0_0_15px_rgba(239,68,68,0.3)]"
+              >
+                ELIMINAR
               </button>
             </div>
           </div>
