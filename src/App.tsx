@@ -9,7 +9,10 @@ import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTim
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { format, differenceInDays } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LogOut, Plus, CheckCircle, Clock, Package, BarChart3, User as UserIcon, Activity, ChevronRight } from 'lucide-react';
+import { LogOut, Plus, CheckCircle, Clock, Package, BarChart3, User as UserIcon, Activity, ChevronRight, FileDown } from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Order {
   id: string;
@@ -21,6 +24,7 @@ interface Order {
   status: 'pending' | 'entered';
   userId: string;
   createdAt: number;
+  notes?: string;
 }
 
 export default function App() {
@@ -174,6 +178,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg-dark text-white font-sans selection:bg-neon-accent selection:text-black">
+      <Toaster position="top-right" toastOptions={{
+        style: {
+          background: '#111',
+          color: '#fff',
+          border: '1px solid rgba(255,255,255,0.1)',
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: '14px'
+        }
+      }} />
       <header className="glass-panel sticky top-0 z-50 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -203,7 +216,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-4 space-y-8">
-            <OrderForm user={user} />
+            <OrderForm user={user} orders={orders} />
             <Statistics orders={orders} />
           </div>
           <div className="lg:col-span-8">
@@ -215,16 +228,27 @@ export default function App() {
   );
 }
 
-function OrderForm({ user }: { user: User }) {
+function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
   const [orderNumber, setOrderNumber] = useState('');
   const [color, setColor] = useState('');
   const [client, setClient] = useState('');
   const [creationDate, setCreationDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderNumber || !color || !client || !creationDate) return;
+
+    // Check for duplicates
+    const isDuplicate = orders.some(
+      (o) => o.orderNumber.toLowerCase() === orderNumber.toLowerCase().trim()
+    );
+
+    if (isDuplicate) {
+      toast.error(`El pedido ${orderNumber} ya existe.`);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -233,6 +257,7 @@ function OrderForm({ user }: { user: User }) {
         color,
         client,
         creationDate,
+        notes,
         status: 'pending',
         userId: user.uid,
         createdAt: Date.now()
@@ -240,9 +265,12 @@ function OrderForm({ user }: { user: User }) {
       setOrderNumber('');
       setColor('');
       setClient('');
+      setNotes('');
       setCreationDate(format(new Date(), 'yyyy-MM-dd'));
+      toast.success('Pedido añadido correctamente');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'orders');
+      toast.error('Error al añadir el pedido');
     } finally {
       setIsSubmitting(false);
     }
@@ -300,6 +328,15 @@ function OrderForm({ user }: { user: User }) {
             onChange={(e) => setClient(e.target.value)}
             className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white placeholder-gray-700 text-sm"
             placeholder="Empresa S.A."
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Notas / Incidencias</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white placeholder-gray-700 text-sm resize-none h-24"
+            placeholder="Información adicional..."
           />
         </div>
         
@@ -378,6 +415,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                     <th className="px-5 py-4">Cliente</th>
                     <th className="px-5 py-4">Color</th>
                     <th className="px-5 py-4">Creación</th>
+                    <th className="px-5 py-4">Notas</th>
                     <th className="px-5 py-4 text-right">Acción</th>
                   </tr>
                 </thead>
@@ -392,6 +430,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                         </span>
                       </td>
                       <td className="px-5 py-4 font-mono text-gray-400 text-xs">{order.creationDate}</td>
+                      <td className="px-5 py-4 text-gray-400 text-xs max-w-[150px] truncate" title={order.notes}>{order.notes || '-'}</td>
                       <td className="px-5 py-4 text-right">
                         <button
                           onClick={() => openConfirmModal(order.id)}
@@ -435,6 +474,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                     <th className="px-5 py-4">Cliente</th>
                     <th className="px-5 py-4">Color</th>
                     <th className="px-5 py-4">Entrada</th>
+                    <th className="px-5 py-4">Notas</th>
                     <th className="px-5 py-4 text-right">Tiempo</th>
                   </tr>
                 </thead>
@@ -451,6 +491,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                           </span>
                         </td>
                         <td className="px-5 py-4 font-mono text-gray-400 text-xs">{order.entryDate}</td>
+                        <td className="px-5 py-4 text-gray-400 text-xs max-w-[150px] truncate" title={order.notes}>{order.notes || '-'}</td>
                         <td className="px-5 py-4 text-right">
                           <span className="inline-flex items-center px-2 py-1 bg-black/50 border border-white/10 rounded font-mono text-neon-accent text-xs">
                             {days}D
@@ -525,14 +566,65 @@ function Statistics({ orders }: { orders: Order[] }) {
   const completionRate = orders.length > 0 ? Math.round((enteredOrders.length / orders.length) * 100) : 0;
   const fastestColor = chartData.length > 0 ? chartData[chartData.length - 1].name : '-';
 
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Reporte de Pedidos', 14, 22);
+    
+    // Statistics
+    doc.setFontSize(12);
+    doc.text(`Total Entradas: ${enteredOrders.length}`, 14, 32);
+    doc.text(`Tasa Completado: ${completionRate}%`, 14, 38);
+    doc.text(`Promedio Global: ${overallAverage} días`, 14, 44);
+    doc.text(`Color Más Rápido: ${fastestColor}`, 14, 50);
+
+    // Table
+    const tableData = enteredOrders.map(order => {
+      const days = differenceInDays(new Date(order.entryDate!), new Date(order.creationDate));
+      return [
+        order.orderNumber,
+        order.client,
+        order.color,
+        format(new Date(order.creationDate), 'dd/MM/yyyy'),
+        format(new Date(order.entryDate!), 'dd/MM/yyyy'),
+        `${days} días`,
+        order.notes || '-'
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 60,
+      head: [['Pedido', 'Cliente', 'Color', 'Creación', 'Entrada', 'Retraso', 'Notas']],
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [0, 255, 204], textColor: [0, 0, 0] },
+    });
+
+    doc.save(`reporte-pedidos-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    toast.success('PDF exportado correctamente');
+  };
+
   return (
     <div className="glass-panel rounded-2xl p-6 relative overflow-hidden">
       <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"></div>
       
-      <h2 className="text-sm font-bold uppercase tracking-widest text-gray-300 mb-6 flex items-center gap-2">
-        <BarChart3 size={16} className="text-purple-400" />
-        Métricas
-      </h2>
+      <div className="flex items-center justify-between mb-6 relative z-10">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-gray-300 flex items-center gap-2">
+          <BarChart3 size={16} className="text-purple-400" />
+          Métricas
+        </h2>
+        {enteredOrders.length > 0 && (
+          <button
+            onClick={exportToPDF}
+            className="text-xs font-mono bg-white/5 hover:bg-white/10 border border-white/10 hover:border-neon-accent/50 text-white py-1.5 px-3 rounded-lg transition-all flex items-center gap-2"
+          >
+            EXPORTAR PDF
+          </button>
+        )}
+      </div>
       
       {orders.length === 0 ? (
         <div className="h-48 flex items-center justify-center border border-dashed border-white/10 rounded-xl">
