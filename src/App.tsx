@@ -236,17 +236,45 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const isDuplicate = useMemo(() => {
+    if (!orderNumber.trim()) return false;
+    return orders.some(
+      (o) => o.orderNumber.toLowerCase() === orderNumber.toLowerCase().trim()
+    );
+  }, [orderNumber, orders]);
+
+  const handleOrderNumberBlur = () => {
+    if (isDuplicate) {
+      toast.error(`El pedido ${orderNumber} ya existe.`, {
+        style: {
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.5)',
+          color: '#f87171',
+        },
+        iconTheme: {
+          primary: '#ef4444',
+          secondary: '#fff',
+        }
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderNumber || !color || !client || !creationDate) return;
 
-    // Check for duplicates
-    const isDuplicate = orders.some(
-      (o) => o.orderNumber.toLowerCase() === orderNumber.toLowerCase().trim()
-    );
-
     if (isDuplicate) {
-      toast.error(`El pedido ${orderNumber} ya existe.`);
+      toast.error(`El pedido ${orderNumber} ya existe.`, {
+        style: {
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.5)',
+          color: '#f87171',
+        },
+        iconTheme: {
+          primary: '#ef4444',
+          secondary: '#fff',
+        }
+      });
       return;
     }
 
@@ -292,7 +320,8 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
             required
             value={orderNumber}
             onChange={(e) => setOrderNumber(e.target.value)}
-            className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white placeholder-gray-700 font-mono text-sm"
+            onBlur={handleOrderNumberBlur}
+            className={`w-full px-4 py-2.5 bg-black/40 border ${isDuplicate ? 'border-red-500/50 focus:ring-red-500 focus:border-red-500' : 'border-white/10 focus:ring-neon-accent focus:border-neon-accent'} rounded-xl outline-none transition-all text-white placeholder-gray-700 font-mono text-sm`}
             placeholder="PED-1001"
           />
         </div>
