@@ -189,7 +189,7 @@ export default function App() {
         }
       }} />
       <header className="glass-panel sticky top-0 z-50 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-neon-accent/10 border border-neon-accent/30 rounded-lg flex items-center justify-center text-neon-accent">
               <Activity size={18} />
@@ -214,13 +214,13 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-4 space-y-8">
+          <div className="lg:col-span-3 space-y-8">
             <OrderForm user={user} orders={orders} />
-            <Statistics orders={orders} />
           </div>
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-9 space-y-8">
+            <Statistics orders={orders} />
             <OrderList orders={orders} />
           </div>
         </div>
@@ -1125,7 +1125,7 @@ function Statistics({ orders }: { orders: Order[] }) {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-black/40 border border-white/5 rounded-xl p-3">
               <p className="text-[10px] font-mono text-gray-500 mb-1">TOTAL ENTRADAS</p>
               <p className="text-xl font-mono text-white">{enteredOrders.length}</p>
@@ -1147,7 +1147,7 @@ function Statistics({ orders }: { orders: Order[] }) {
           {chartData.length > 0 && (
             <div>
               <p className="text-xs font-mono text-gray-500 mb-4">TIEMPO PROMEDIO (DÍAS)</p>
-              <div className="h-48 w-full">
+              <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
