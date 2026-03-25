@@ -19,6 +19,7 @@ interface Order {
   orderNumber: string;
   color: string;
   client: string;
+  jobType: string;
   creationDate: string;
   entryDate?: string;
   status: 'pending' | 'entered';
@@ -232,6 +233,7 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
   const [orderNumber, setOrderNumber] = useState('');
   const [color, setColor] = useState('');
   const [client, setClient] = useState('');
+  const [jobType, setJobType] = useState('Lacado Estándar');
   const [creationDate, setCreationDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -284,6 +286,7 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
         orderNumber,
         color,
         client,
+        jobType,
         creationDate,
         notes,
         status: 'pending',
@@ -293,6 +296,7 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
       setOrderNumber('');
       setColor('');
       setClient('');
+      setJobType('Lacado Estándar');
       setNotes('');
       setCreationDate(format(new Date(), 'yyyy-MM-dd'));
       toast.success('Pedido añadido correctamente');
@@ -360,6 +364,22 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
           />
         </div>
         <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Trabajo</label>
+          <select
+            value={jobType}
+            onChange={(e) => setJobType(e.target.value)}
+            className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm appearance-none"
+          >
+            <option value="Lacado Estándar">Lacado Estándar</option>
+            <option value="Lacado Especial">Lacado Especial</option>
+            <option value="Metalizado">Metalizado</option>
+            <option value="Anodizado">Anodizado</option>
+            <option value="Madera">Madera</option>
+            <option value="Bicolor">Bicolor</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Notas / Incidencias</label>
           <textarea
             value={notes}
@@ -391,6 +411,7 @@ function OrderForm({ user, orders }: { user: User, orders: Order[] }) {
 function OrderList({ orders }: { orders: Order[] }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterColor, setFilterColor] = useState('');
+  const [filterJobType, setFilterJobType] = useState('');
   
   const [currentPagePending, setCurrentPagePending] = useState(1);
   const [currentPageEntered, setCurrentPageEntered] = useState(1);
@@ -413,15 +434,22 @@ function OrderList({ orders }: { orders: Order[] }) {
     return Array.from(colors).sort();
   }, [orders]);
 
+  // Derived unique job types for filter
+  const uniqueJobTypes = useMemo(() => {
+    const types = new Set(orders.map(o => o.jobType).filter(Boolean));
+    return Array.from(types).sort();
+  }, [orders]);
+
   // Filtered orders
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
       const matchesSearch = o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             o.client.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesColor = filterColor ? o.color.toLowerCase().trim() === filterColor : true;
-      return matchesSearch && matchesColor;
+      const matchesJobType = filterJobType ? o.jobType === filterJobType : true;
+      return matchesSearch && matchesColor && matchesJobType;
     });
-  }, [orders, searchTerm, filterColor]);
+  }, [orders, searchTerm, filterColor, filterJobType]);
 
   const pendingOrders = filteredOrders.filter(o => o.status === 'pending');
   const enteredOrders = filteredOrders.filter(o => o.status === 'entered');
@@ -437,7 +465,7 @@ function OrderList({ orders }: { orders: Order[] }) {
   useEffect(() => {
     setCurrentPagePending(1);
     setCurrentPageEntered(1);
-  }, [searchTerm, filterColor]);
+  }, [searchTerm, filterColor, filterJobType]);
 
   const openConfirmModal = (order: Order) => {
     setSelectedOrderId(order.id);
@@ -491,6 +519,7 @@ function OrderList({ orders }: { orders: Order[] }) {
         orderNumber: editingOrder.orderNumber.trim(),
         client: editingOrder.client.trim(),
         color: editingOrder.color.trim(),
+        jobType: editingOrder.jobType,
         creationDate: editingOrder.creationDate,
         notes: editingOrder.notes?.trim() || '',
         ...(editingOrder.status === 'entered' ? { entryDate: editingOrder.entryDate } : {})
@@ -576,6 +605,19 @@ function OrderList({ orders }: { orders: Order[] }) {
             ))}
           </select>
         </div>
+        <div className="relative w-full sm:w-64">
+          <Filter size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <select
+            value={filterJobType}
+            onChange={(e) => setFilterJobType(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm appearance-none"
+          >
+            <option value="">Todos los trabajos</option>
+            {uniqueJobTypes.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Pending Orders */}
@@ -603,6 +645,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                   <tr>
                     <th className="px-5 py-4">ID</th>
                     <th className="px-5 py-4">Cliente</th>
+                    <th className="px-5 py-4">Trabajo</th>
                     <th className="px-5 py-4">Color</th>
                     <th className="px-5 py-4">Creación</th>
                     <th className="px-5 py-4">Notas</th>
@@ -614,6 +657,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                     <tr key={order.id} className="hover:bg-white/5 transition-colors group">
                       <td className="px-5 py-4 font-display font-bold text-white tracking-wide">{order.orderNumber}</td>
                       <td className="px-5 py-4 text-gray-300">{order.client}</td>
+                      <td className="px-5 py-4 text-gray-300">{order.jobType}</td>
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-gray-300">
                           {order.color}
@@ -661,7 +705,7 @@ function OrderList({ orders }: { orders: Order[] }) {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-bold uppercase tracking-widest text-gray-300 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-neon-accent neon-glow"></div>
-            En Almacén
+            Entregados
           </h2>
           <span className="bg-neon-accent/10 text-neon-accent border border-neon-accent/20 px-2 py-0.5 rounded text-xs font-mono">
             {enteredOrders.length}
@@ -671,7 +715,7 @@ function OrderList({ orders }: { orders: Order[] }) {
         {enteredOrders.length === 0 ? (
           <div className="glass-panel border-dashed border-white/20 p-12 flex flex-col items-center justify-center text-gray-500 rounded-2xl">
             <PackageOpen size={48} className="mb-4 text-white/10" />
-            <p className="font-mono text-sm tracking-widest">NO HAY REGISTROS EN ALMACÉN</p>
+            <p className="font-mono text-sm tracking-widest">NO HAY REGISTROS ENTREGADOS</p>
           </div>
         ) : (
           <div className="glass-panel rounded-2xl overflow-hidden">
@@ -681,6 +725,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                   <tr>
                     <th className="px-5 py-4">ID</th>
                     <th className="px-5 py-4">Cliente</th>
+                    <th className="px-5 py-4">Trabajo</th>
                     <th className="px-5 py-4">Color</th>
                     <th className="px-5 py-4">Entrada</th>
                     <th className="px-5 py-4">Notas</th>
@@ -698,6 +743,7 @@ function OrderList({ orders }: { orders: Order[] }) {
                       <tr key={order.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-5 py-4 font-display font-bold text-white tracking-wide">{order.orderNumber}</td>
                         <td className="px-5 py-4 text-gray-300">{order.client}</td>
+                        <td className="px-5 py-4 text-gray-300">{order.jobType}</td>
                         <td className="px-5 py-4">
                           <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-gray-300">
                             {order.color}
@@ -838,6 +884,22 @@ function OrderList({ orders }: { orders: Order[] }) {
                   className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Trabajo</label>
+                <select
+                  value={editingOrder.jobType}
+                  onChange={(e) => setEditingOrder({...editingOrder, jobType: e.target.value})}
+                  className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl focus:ring-1 focus:ring-neon-accent focus:border-neon-accent outline-none transition-all text-white text-sm appearance-none"
+                >
+                  <option value="Lacado Estándar">Lacado Estándar</option>
+                  <option value="Lacado Especial">Lacado Especial</option>
+                  <option value="Metalizado">Metalizado</option>
+                  <option value="Anodizado">Anodizado</option>
+                  <option value="Madera">Madera</option>
+                  <option value="Bicolor">Bicolor</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
               {editingOrder.status === 'entered' && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Fecha Entrada</label>
@@ -911,45 +973,50 @@ function OrderList({ orders }: { orders: Order[] }) {
 }
 
 function Statistics({ orders }: { orders: Order[] }) {
+  const [groupBy, setGroupBy] = useState<'color' | 'jobType' | 'client'>('color');
   const enteredOrders = orders.filter(o => o.status === 'entered' && o.entryDate);
 
-  // Calculate average days per color
+  // Calculate average days per selected grouping
   let totalDaysAll = 0;
-  const statsByColor = enteredOrders.reduce((acc, order) => {
+  const statsGrouped = enteredOrders.reduce((acc, order) => {
     const days = differenceInDays(new Date(order.entryDate!), new Date(order.creationDate));
     totalDaysAll += days;
-    const color = order.color.toLowerCase().trim();
     
-    if (!acc[color]) {
-      acc[color] = { color: order.color, totalDays: 0, count: 0 };
+    let key = '';
+    if (groupBy === 'color') key = order.color.toLowerCase().trim();
+    else if (groupBy === 'jobType') key = order.jobType || 'Sin Trabajo';
+    else if (groupBy === 'client') key = order.client.toLowerCase().trim();
+    
+    if (!acc[key]) {
+      acc[key] = { name: key, totalDays: 0, count: 0 };
     }
-    acc[color].totalDays += days;
-    acc[color].count += 1;
+    acc[key].totalDays += days;
+    acc[key].count += 1;
     return acc;
-  }, {} as Record<string, { color: string, totalDays: number, count: number }>);
+  }, {} as Record<string, { name: string, totalDays: number, count: number }>);
 
-  const chartData = Object.values(statsByColor).map(stat => ({
-    name: stat.color.toUpperCase(),
+  const chartData = Object.values(statsGrouped).map(stat => ({
+    name: stat.name.toUpperCase(),
     Promedio: Number((stat.totalDays / stat.count).toFixed(1))
   })).sort((a, b) => b.Promedio - a.Promedio);
 
   const overallAverage = enteredOrders.length > 0 ? (totalDaysAll / enteredOrders.length).toFixed(1) : '0';
   const completionRate = orders.length > 0 ? Math.round((enteredOrders.length / orders.length) * 100) : 0;
-  const fastestColor = chartData.length > 0 ? chartData[chartData.length - 1].name : '-';
+  const fastestGroup = chartData.length > 0 ? chartData[chartData.length - 1].name : '-';
 
   const exportToPDF = () => {
     const doc = new jsPDF();
     
     // Title
     doc.setFontSize(18);
-    doc.text('Reporte de Pedidos', 14, 22);
+    doc.text(`Reporte de Pedidos por ${groupBy === 'color' ? 'Color' : groupBy === 'jobType' ? 'Trabajo' : 'Cliente'}`, 14, 22);
     
     // Statistics
     doc.setFontSize(12);
     doc.text(`Total Entradas: ${enteredOrders.length}`, 14, 32);
     doc.text(`Tasa Completado: ${completionRate}%`, 14, 38);
     doc.text(`Promedio Global: ${overallAverage} días`, 14, 44);
-    doc.text(`Color Más Rápido: ${fastestColor}`, 14, 50);
+    doc.text(`Más Rápido: ${fastestGroup}`, 14, 50);
 
     // Table
     const tableData = enteredOrders.map(order => {
@@ -957,6 +1024,7 @@ function Statistics({ orders }: { orders: Order[] }) {
       return [
         order.orderNumber,
         order.client,
+        order.jobType || '-',
         order.color,
         format(new Date(order.creationDate), 'dd/MM/yyyy'),
         format(new Date(order.entryDate!), 'dd/MM/yyyy'),
@@ -967,7 +1035,7 @@ function Statistics({ orders }: { orders: Order[] }) {
 
     autoTable(doc, {
       startY: 60,
-      head: [['Pedido', 'Cliente', 'Color', 'Creación', 'Entrada', 'Retraso', 'Notas']],
+      head: [['Pedido', 'Cliente', 'Trabajo', 'Color', 'Creación', 'Entrada', 'Retraso', 'Notas']],
       body: tableData,
       theme: 'grid',
       styles: { fontSize: 8 },
@@ -987,14 +1055,25 @@ function Statistics({ orders }: { orders: Order[] }) {
           <BarChart3 size={16} className="text-purple-400" />
           Métricas
         </h2>
-        {enteredOrders.length > 0 && (
-          <button
-            onClick={exportToPDF}
-            className="text-xs font-mono bg-white/5 hover:bg-white/10 border border-white/10 hover:border-neon-accent/50 text-white py-1.5 px-3 rounded-lg transition-all flex items-center gap-2"
+        <div className="flex items-center gap-2">
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as any)}
+            className="text-xs font-mono bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-purple-400/50 appearance-none"
           >
-            EXPORTAR PDF
-          </button>
-        )}
+            <option value="color">Por Color</option>
+            <option value="jobType">Por Trabajo</option>
+            <option value="client">Por Cliente</option>
+          </select>
+          {enteredOrders.length > 0 && (
+            <button
+              onClick={exportToPDF}
+              className="text-xs font-mono bg-white/5 hover:bg-white/10 border border-white/10 hover:border-neon-accent/50 text-white py-1.5 px-3 rounded-lg transition-all flex items-center gap-2"
+            >
+              EXPORTAR PDF
+            </button>
+          )}
+        </div>
       </div>
       
       {orders.length === 0 ? (
@@ -1017,8 +1096,8 @@ function Statistics({ orders }: { orders: Order[] }) {
               <p className="text-xl font-mono text-white">{overallAverage} <span className="text-xs text-gray-500">días</span></p>
             </div>
             <div className="bg-black/40 border border-white/5 rounded-xl p-3">
-              <p className="text-[10px] font-mono text-gray-500 mb-1">COLOR MÁS RÁPIDO</p>
-              <p className="text-sm font-mono text-purple-400 mt-1 truncate" title={fastestColor}>{fastestColor}</p>
+              <p className="text-[10px] font-mono text-gray-500 mb-1">MÁS RÁPIDO</p>
+              <p className="text-sm font-mono text-purple-400 mt-1 truncate" title={fastestGroup}>{fastestGroup}</p>
             </div>
           </div>
           

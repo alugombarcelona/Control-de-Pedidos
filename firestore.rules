@@ -12,6 +12,7 @@ service cloud.firestore {
     //   - orderNumber: string (required, 1-50 chars)
     //   - color: string (required, 1-50 chars)
     //   - client: string (required, 1-100 chars)
+    //   - jobType: string (optional, 1-50 chars)
     //   - creationDate: string (required, YYYY-MM-DD format)
     //   - entryDate: string (optional, YYYY-MM-DD format)
     //   - notes: string (optional, 0-1000 chars)
@@ -70,20 +71,18 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidOrder() {
-      let allowedFields = ['orderNumber', 'color', 'client', 'creationDate', 'entryDate', 'notes', 'status', 'userId', 'createdAt'];
+      let allowedFields = ['orderNumber', 'color', 'client', 'jobType', 'creationDate', 'entryDate', 'notes', 'status', 'userId', 'createdAt'];
       let hasRequired = hasRequiredFields(['orderNumber', 'color', 'client', 'creationDate', 'status', 'userId', 'createdAt']);
       let onlyAllowed = hasOnlyAllowedFields(allowedFields);
       
-      let validOrderNumber = validStringLength('orderNumber', 1, 50);
-      let validColor = validStringLength('color', 1, 50);
-      let validClient = validStringLength('client', 1, 100);
-      let validCreationDate = isValidDateString(request.resource.data.creationDate);
-      let validEntryDate = !('entryDate' in request.resource.data) || isValidDateString(request.resource.data.entryDate);
+      let validStrings = validStringLength('orderNumber', 1, 50) && validStringLength('color', 1, 50) && validStringLength('client', 1, 100);
+      let validJobType = !('jobType' in request.resource.data) || (request.resource.data.jobType is string && request.resource.data.jobType.size() >= 1 && request.resource.data.jobType.size() <= 50);
+      let validDates = isValidDateString(request.resource.data.creationDate) && (!('entryDate' in request.resource.data) || isValidDateString(request.resource.data.entryDate));
       let validNotes = !('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000);
       let validStatus = request.resource.data.status in ['pending', 'entered'];
       let validCreatedAt = request.resource.data.createdAt is number;
 
-      return hasRequired && onlyAllowed && validOrderNumber && validColor && validClient && validCreationDate && validEntryDate && validNotes && validStatus && validCreatedAt;
+      return hasRequired && onlyAllowed && validStrings && validJobType && validDates && validNotes && validStatus && validCreatedAt;
     }
 
     function validStatusTransition() {
