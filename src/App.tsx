@@ -974,7 +974,39 @@ function OrderList({ orders }: { orders: Order[] }) {
 
 function Statistics({ orders }: { orders: Order[] }) {
   const [groupBy, setGroupBy] = useState<'color' | 'jobType' | 'client'>('color');
-  const enteredOrders = orders.filter(o => o.status === 'entered' && o.entryDate);
+  const [filterValue, setFilterValue] = useState<string>('');
+
+  // Reset filter when grouping changes
+  useEffect(() => {
+    setFilterValue('');
+  }, [groupBy]);
+
+  // Derived unique options for the secondary filter based on current grouping
+  const uniqueOptions = useMemo(() => {
+    const options = new Set<string>();
+    orders.forEach(o => {
+      let key = '';
+      if (groupBy === 'color') key = o.color.toLowerCase().trim();
+      else if (groupBy === 'jobType') key = o.jobType || 'Sin Trabajo';
+      else if (groupBy === 'client') key = o.client.toLowerCase().trim();
+      if (key) options.add(key);
+    });
+    return Array.from(options).sort();
+  }, [orders, groupBy]);
+
+  // Filter orders based on the secondary filter
+  const filteredAllOrders = useMemo(() => {
+    if (!filterValue) return orders;
+    return orders.filter(o => {
+      let key = '';
+      if (groupBy === 'color') key = o.color.toLowerCase().trim();
+      else if (groupBy === 'jobType') key = o.jobType || 'Sin Trabajo';
+      else if (groupBy === 'client') key = o.client.toLowerCase().trim();
+      return key === filterValue;
+    });
+  }, [orders, groupBy, filterValue]);
+
+  const enteredOrders = filteredAllOrders.filter(o => o.status === 'entered' && o.entryDate);
 
   // Calculate average days per selected grouping
   let totalDaysAll = 0;
@@ -1001,7 +1033,7 @@ function Statistics({ orders }: { orders: Order[] }) {
   })).sort((a, b) => b.Promedio - a.Promedio);
 
   const overallAverage = enteredOrders.length > 0 ? (totalDaysAll / enteredOrders.length).toFixed(1) : '0';
-  const completionRate = orders.length > 0 ? Math.round((enteredOrders.length / orders.length) * 100) : 0;
+  const completionRate = filteredAllOrders.length > 0 ? Math.round((enteredOrders.length / filteredAllOrders.length) * 100) : 0;
   const fastestGroup = chartData.length > 0 ? chartData[chartData.length - 1].name : '-';
 
   const exportToPDF = () => {
@@ -1009,7 +1041,8 @@ function Statistics({ orders }: { orders: Order[] }) {
     
     // Title
     doc.setFontSize(18);
-    doc.text(`Reporte de Pedidos por ${groupBy === 'color' ? 'Color' : groupBy === 'jobType' ? 'Trabajo' : 'Cliente'}`, 14, 22);
+    const titleFilter = filterValue ? ` - ${filterValue.toUpperCase()}` : '';
+    doc.text(`Reporte de Pedidos por ${groupBy === 'color' ? 'Color' : groupBy === 'jobType' ? 'Trabajo' : 'Cliente'}${titleFilter}`, 14, 22);
     
     // Statistics
     doc.setFontSize(12);
@@ -1065,6 +1098,16 @@ function Statistics({ orders }: { orders: Order[] }) {
             <option value="jobType">Por Trabajo</option>
             <option value="client">Por Cliente</option>
           </select>
+          <select
+            value={filterValue}
+            onChange={(e) => setFilterValue(e.target.value)}
+            className="text-xs font-mono bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white outline-none focus:border-purple-400/50 appearance-none max-w-[120px] sm:max-w-[150px] truncate"
+          >
+            <option value="">Todos</option>
+            {uniqueOptions.map(opt => (
+              <option key={opt} value={opt}>{opt.toUpperCase()}</option>
+            ))}
+          </select>
           {enteredOrders.length > 0 && (
             <button
               onClick={exportToPDF}
@@ -1076,7 +1119,7 @@ function Statistics({ orders }: { orders: Order[] }) {
         </div>
       </div>
       
-      {orders.length === 0 ? (
+      {filteredAllOrders.length === 0 ? (
         <div className="h-48 flex items-center justify-center border border-dashed border-white/10 rounded-xl">
           <p className="text-xs font-mono text-gray-600">DATOS INSUFICIENTES</p>
         </div>
